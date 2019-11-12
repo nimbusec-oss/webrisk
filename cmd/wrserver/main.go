@@ -199,7 +199,7 @@ import (
 	"os"
 
 	"github.com/google/webrisk"
-	pb "github.com/google/webrisk/internal/webrisk_proto"
+	pb "github.com/nimbusec-oss/webrisk/internal/webrisk_proto"
 
 	_ "github.com/google/webrisk/cmd/wrserver/statik"
 	"github.com/golang/protobuf/jsonpb"

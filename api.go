@@ -22,8 +22,8 @@ import (
 	"net/url"
 	"strings"
 
-	pb "github.com/google/webrisk/internal/webrisk_proto"
 	"github.com/golang/protobuf/proto"
+	pb "github.com/nimbusec-oss/webrisk/internal/webrisk_proto"
 )
 
 const (
