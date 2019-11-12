@@ -28,6 +28,7 @@ import (
 
 const (
 	findHashPath    = "/$rpc/google.cloud.webrisk.v1beta1.WebRiskServiceV1Beta1/SearchHashes"
+	findURLPath     = "/$rpc/google.cloud.webrisk.v1beta1.WebRiskServiceV1Beta1/SearchUris"
 	fetchUpdatePath = "/$rpc/google.cloud.webrisk.v1beta1.WebRiskServiceV1Beta1/ComputeThreatListDiff"
 )
 
@@ -35,6 +36,7 @@ const (
 type api interface {
 	ListUpdate(ctx context.Context, req *pb.ComputeThreatListDiffRequest) (*pb.ComputeThreatListDiffResponse, error)
 	HashLookup(ctx context.Context, req *pb.SearchHashesRequest) (*pb.SearchHashesResponse, error)
+	URLLookup(ctx context.Context, req *pb.SearchUrisRequest) (*pb.SearchUrisResponse, error)
 }
 
 // netAPI is an api object that talks to the server over HTTP.
@@ -113,4 +115,10 @@ func (a *netAPI) ListUpdate(ctx context.Context, req *pb.ComputeThreatListDiffRe
 func (a *netAPI) HashLookup(ctx context.Context, req *pb.SearchHashesRequest) (*pb.SearchHashesResponse, error) {
 	resp := new(pb.SearchHashesResponse)
 	return resp, a.doRequest(ctx, findHashPath, req, resp)
+}
+
+// URLLookup issues a SearchUris API call and returns the response.
+func (a *netAPI) URLLookup(ctx context.Context, req *pb.SearchUrisRequest) (*pb.SearchUrisResponse, error) {
+	resp := new(pb.SearchUrisResponse)
+	return resp, a.doRequest(ctx, findURLPath, req, resp)
 }

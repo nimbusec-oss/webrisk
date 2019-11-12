@@ -18,8 +18,8 @@ import (
 	"sync"
 	"time"
 
-	pb "github.com/nimbusec-oss/webrisk/internal/webrisk_proto"
 	pt "github.com/golang/protobuf/ptypes"
+	pb "github.com/nimbusec-oss/webrisk/internal/webrisk_proto"
 )
 
 type cacheResult int
@@ -98,6 +98,35 @@ func (c *cache) Update(req *pb.SearchHashesRequest, resp *pb.SearchHashesRespons
 		nttl, _ := pt.Timestamp(resp.GetNegativeExpireTime())
 		partialHash := hashPrefix(req.HashPrefix)
 		c.nttls[partialHash] = nttl
+	}
+	return nil
+}
+
+// UpdateFromUri updates the cache according to the request that was made to the server
+// and the response given back.
+func (c *cache) UpdateFromUri(fullHash hashPrefix, resp *pb.SearchUrisResponse) error {
+	c.Lock()
+	defer c.Unlock()
+
+	if c.pttls == nil {
+		c.pttls = make(map[hashPrefix]map[ThreatType]time.Time)
+		c.nttls = make(map[hashPrefix]time.Time)
+	}
+
+	// Insert each threat match into the cache by full hash.
+	threat := resp.GetThreat()
+
+	if fullHash.IsFull() {
+		if c.pttls[fullHash] == nil {
+			c.pttls[fullHash] = make(map[ThreatType]time.Time)
+		}
+		for _, tt := range threat.ThreatTypes {
+			var err error
+			c.pttls[fullHash][ThreatType(tt)], err = pt.Timestamp(threat.ExpireTime)
+			if err != nil {
+				return fmt.Errorf("pt.Timestamp: %v", err)
+			}
+		}
 	}
 	return nil
 }

@@ -484,6 +484,125 @@ func (sb *WebriskClient) LookupURLsContext(ctx context.Context, urls []string) (
 	return threats, nil
 }
 
+// LookupURL looks up the provided URL via SearchUris RPC. It returns a list of threats, one for
+// every URL requested, and an error if any occurred. It is safe to call this
+// method concurrently.
+func (sb *WebriskClient) LookupURL(urls []string) (threats [][]URLThreat, err error) {
+	threats, err = sb.LookupUrisContext(context.Background(), urls)
+	return threats, err
+}
+
+// LookupUrisContext looks up the provided URL. The request will be canceled
+// if the provided Context is canceled, or if Config.RequestTimeout has
+// elapsed. It is safe to call this method concurrently.
+//
+// See LookupUris for details on the returned results.
+func (sb *WebriskClient) LookupUrisContext(ctx context.Context, urls []string) (threats [][]URLThreat, err error) {
+	ctx, cancel := context.WithTimeout(ctx, sb.config.RequestTimeout)
+	defer cancel()
+
+	threats = make([][]URLThreat, len(urls))
+
+	if atomic.LoadUint32(&sb.closed) != 0 {
+		return threats, errClosed
+	}
+	if err := sb.db.Status(); err != nil {
+		sb.log.Printf("inconsistent database: %v", err)
+		atomic.AddInt64(&sb.stats.QueriesFail, int64(len(urls)))
+		return threats, err
+	}
+
+	hashes := make(map[hashPrefix]string)
+	hash2idxs := make(map[hashPrefix][]int)
+
+	// Construct the follow-up request being made to the server.
+	// In the request, we only ask for partial hashes for privacy reasons.
+	ttm := make(map[pb.ThreatType]bool)
+
+	for i, url := range urls {
+		urlhashes, err := generateHashes(url)
+		if err != nil {
+			sb.log.Printf("error generating urlhashes: %v", err)
+			atomic.AddInt64(&sb.stats.QueriesFail, int64(len(urls)-i))
+			return threats, err
+		}
+
+		for fullHash, pattern := range urlhashes {
+			hash2idxs[fullHash] = append(hash2idxs[fullHash], i)
+			_, alreadyRequested := hashes[fullHash]
+			hashes[fullHash] = pattern
+
+			// Lookup in database according to threat list.
+			_, unsureThreats := sb.db.Lookup(fullHash)
+			if len(unsureThreats) == 0 {
+				atomic.AddInt64(&sb.stats.QueriesByDatabase, 1)
+				continue // There are definitely no threats for this full hash
+			}
+
+			// Lookup in cache according to recently seen values.
+			cachedThreats, cr := sb.c.Lookup(fullHash)
+			switch cr {
+			case positiveCacheHit:
+				// The cache remembers this full hash as a threat.
+				// The threats we return to the client is the set intersection
+				// of unsureThreats and cachedThreats.
+				for _, td := range unsureThreats {
+					if _, ok := cachedThreats[td]; ok {
+						threats[i] = append(threats[i], URLThreat{
+							Pattern:    pattern,
+							ThreatType: td,
+						})
+					}
+				}
+				atomic.AddInt64(&sb.stats.QueriesByCache, 1)
+			case negativeCacheHit:
+				// This is cached as a non-threat.
+				atomic.AddInt64(&sb.stats.QueriesByCache, 1)
+				continue
+			default:
+				// The cache knows nothing about this full hash, so we must make
+				// a request for it.
+				if alreadyRequested {
+					continue
+				}
+				for _, td := range unsureThreats {
+					ttm[pb.ThreatType(td)] = true
+				}
+
+				tts := []pb.ThreatType{}
+				for _, tt := range unsureThreats {
+					tts = append(tts, pb.ThreatType(tt))
+				}
+
+				// Actually query the Web Risk API for exact full hash matches.
+				resp, err := sb.api.URLLookup(ctx, &pb.SearchUrisRequest{
+					Uri:         pattern,
+					ThreatTypes: tts,
+				})
+				if err != nil {
+					sb.log.Printf("URLLookup failure: %v", err)
+					atomic.AddInt64(&sb.stats.QueriesFail, 1)
+					return threats, err
+				}
+				threat := resp.GetThreat()
+				for _, td := range threat.ThreatTypes {
+					if !sb.lists[ThreatType(td)] {
+						continue
+					}
+					threats[i] = append(threats[i], URLThreat{
+						Pattern:    pattern,
+						ThreatType: ThreatType(td),
+					})
+				}
+				sb.c.UpdateFromUri(fullHash, resp)
+				atomic.AddInt64(&sb.stats.QueriesByAPI, 1)
+			}
+		}
+	}
+
+	return threats, nil
+}
+
 // TODO: Add other types of lookup when available.
 //	func (sb *WebriskClient) LookupBinaries(digests []string) (threats []BinaryThreat, err error)
 //	func (sb *WebriskClient) LookupAddresses(addrs []string) (threats [][]AddressThreat, err error)
