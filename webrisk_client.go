@@ -585,16 +585,18 @@ func (sb *WebriskClient) LookupUrisContext(ctx context.Context, urls []string) (
 					return threats, err
 				}
 				threat := resp.GetThreat()
-				for _, td := range threat.ThreatTypes {
-					if !sb.lists[ThreatType(td)] {
-						continue
+				if threat != nil {
+					for _, td := range threat.ThreatTypes {
+						if !sb.lists[ThreatType(td)] {
+							continue
+						}
+						threats[i] = append(threats[i], URLThreat{
+							Pattern:    pattern,
+							ThreatType: ThreatType(td),
+						})
 					}
-					threats[i] = append(threats[i], URLThreat{
-						Pattern:    pattern,
-						ThreatType: ThreatType(td),
-					})
+					sb.c.UpdateFromUri(fullHash, resp)
 				}
-				sb.c.UpdateFromUri(fullHash, resp)
 				atomic.AddInt64(&sb.stats.QueriesByAPI, 1)
 			}
 		}
