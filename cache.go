@@ -117,14 +117,18 @@ func (c *cache) UpdateFromUri(fullHash hashPrefix, resp *pb.SearchUrisResponse) 
 	threat := resp.GetThreat()
 
 	if fullHash.IsFull() {
-		if c.pttls[fullHash] == nil {
-			c.pttls[fullHash] = make(map[ThreatType]time.Time)
-		}
-		for _, tt := range threat.ThreatTypes {
-			var err error
-			c.pttls[fullHash][ThreatType(tt)], err = pt.Timestamp(threat.ExpireTime)
-			if err != nil {
-				return fmt.Errorf("pt.Timestamp: %v", err)
+		if threat == nil {
+			c.nttls[fullHash] = time.Now().UTC().Add(12 * time.Hour)
+		} else {
+			if c.pttls[fullHash] == nil {
+				c.pttls[fullHash] = make(map[ThreatType]time.Time)
+			}
+			for _, tt := range threat.ThreatTypes {
+				var err error
+				c.pttls[fullHash][ThreatType(tt)], err = pt.Timestamp(threat.ExpireTime)
+				if err != nil {
+					return fmt.Errorf("pt.Timestamp: %v", err)
+				}
 			}
 		}
 	}

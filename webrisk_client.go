@@ -584,6 +584,9 @@ func (sb *WebriskClient) LookupUrisContext(ctx context.Context, urls []string) (
 					atomic.AddInt64(&sb.stats.QueriesFail, 1)
 					return threats, err
 				}
+
+				sb.c.UpdateFromUri(fullHash, resp)
+
 				threat := resp.GetThreat()
 				if threat != nil {
 					for _, td := range threat.ThreatTypes {
@@ -595,7 +598,6 @@ func (sb *WebriskClient) LookupUrisContext(ctx context.Context, urls []string) (
 							ThreatType: ThreatType(td),
 						})
 					}
-					sb.c.UpdateFromUri(fullHash, resp)
 				}
 				atomic.AddInt64(&sb.stats.QueriesByAPI, 1)
 			}
